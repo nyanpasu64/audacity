@@ -171,7 +171,7 @@ WaveClip::WaveClip(const WaveClip& orig,
    // Copy only a range of the other WaveClip
 
    mSequenceOffset = orig.mSequenceOffset;
-   
+
    mRate = orig.mRate;
    mColourIndex = orig.mColourIndex;
 
@@ -945,7 +945,7 @@ bool WaveClip::GetSpectrogram(WaveTrackCache &waveTrackCache,
    const WaveTrack *const track = waveTrackCache.GetTrack().get();
    const SpectrogramSettings &settings = track->GetSpectrogramSettings();
 
-   //Trim offset comparison failure forces spectrogram cache rebuild 
+   //Trim offset comparison failure forces spectrogram cache rebuild
    //and skip copying "unchanged" data after clip border was trimmed.
    bool match =
       mSpecCache &&
@@ -1012,10 +1012,23 @@ bool WaveClip::GetSpectrogram(WaveTrackCache &waveTrackCache,
    // possible
    if (copyEnd > copyBegin)
    {
+      auto & freq = mSpecCache->freq;
+
+      // (size_t * int) is u64 on x86-64, and ?32 on x86-32.
+      auto dest = nBins * copyBegin;
+      assert(0 <= dest);
+      assert(dest < freq.size());
+
+      auto src = nBins * (copyBegin + oldX0);
+      assert(0 <= src);
+      // ah fuck, this fails too.
+      assert(src <= freq.size());
+      // Perhaps this was meant to be freq.data() + nBins * (copyBegin + oldX0)?
+      // &vec[end] is invalid while vec.data() + end is valid.
+      assert(src < freq.size());
+
       // memmove is required since dst/src overlap
-      memmove(&mSpecCache->freq[nBins * copyBegin],
-               &mSpecCache->freq[nBins * (copyBegin + oldX0)],
-               nBins * (copyEnd - copyBegin) * sizeof(float));
+      memmove(&freq[dest], &freq[src], nBins * (copyEnd - copyBegin) * sizeof(float));
    }
 
    // Reassignment accumulates, so it needs a zeroed buffer
@@ -1353,7 +1366,7 @@ void WaveClip::Paste(double t0, const WaveClip* other)
    WaveClipHolders newCutlines;
    for (const auto &cutline: newClip->mCutLines)
    {
-      auto cutlineCopy = std::make_unique<WaveClip>(*cutline, mSequence->GetFactory(), 
+      auto cutlineCopy = std::make_unique<WaveClip>(*cutline, mSequence->GetFactory(),
          // Recursively copy cutlines of cutlines.  They don't need
          // their offsets adjusted.
          true);
@@ -1444,7 +1457,7 @@ void WaveClip::Clear(double t0, double t1)
     ClearSequence(st0, st1);
 
     if (offset != .0)
-        Offset(offset);        
+        Offset(offset);
 }
 
 void WaveClip::ClearLeft(double t)
@@ -1568,7 +1581,7 @@ void WaveClip::ClearAndAddCutLine(double t0, double t1)
    // Collapse envelope
    auto sampleTime = 1.0 / GetRate();
    GetEnvelope()->CollapseRegion( t0, t1, sampleTime );
-   
+
    MarkChanged();
 
    mCutLines.push_back(std::move(newClip));
@@ -1631,7 +1644,7 @@ bool WaveClip::RemoveCutLine(double cutLinePosition)
    for (auto it = mCutLines.begin(); it != mCutLines.end(); ++it)
    {
       const auto &cutline = *it;
-      //std::numeric_limits<double>::epsilon() or (1.0 / static_cast<double>(mRate))? 
+      //std::numeric_limits<double>::epsilon() or (1.0 / static_cast<double>(mRate))?
       if (fabs(GetSequenceStartTime() + cutline->GetSequenceStartTime() - cutLinePosition) < 0.0001)
       {
          mCutLines.erase(it); // deletes cutline!
@@ -1814,7 +1827,7 @@ double WaveClip::GetPlayEndTime() const
 {
     auto numSamples = mSequence->GetNumSamples();
 
-    double maxLen = GetSequenceStartTime() + ((numSamples + mAppendBufferLen).as_double()) / mRate 
+    double maxLen = GetSequenceStartTime() + ((numSamples + mAppendBufferLen).as_double()) / mRate
        - SamplesToTime(TimeToSamples(mTrimRight));
     // JS: calculated value is not the length;
     // it is a maximum value and can be negative; no clipping to 0
@@ -1919,7 +1932,7 @@ void WaveClip::Offset(double delta) noexcept
 // Bug 2288 allowed overlapping clips.
 // This was a classic fencepost error.
 // We are within the clip if start < t <= end.
-// Note that BeforeClip and AfterClip must be consistent 
+// Note that BeforeClip and AfterClip must be consistent
 // with this definition.
 bool WaveClip::WithinPlayRegion(double t) const
 {
