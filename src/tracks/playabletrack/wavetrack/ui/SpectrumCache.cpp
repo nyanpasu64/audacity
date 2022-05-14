@@ -547,10 +547,23 @@ bool WaveClipSpectrumCache::GetSpectrogram(const WaveClip &clip,
    // possible
    if (copyEnd > copyBegin)
    {
+      auto & freq = mSpecCache->freq;
+
+      // (size_t * int) is u64 on x86-64, and ?32 on x86-32.
+      auto dest = nBins * copyBegin;
+      assert(0 <= dest);
+      assert(dest < freq.size());
+
+      auto src = nBins * (copyBegin + oldX0);
+      assert(0 <= src);
+      // ah fuck, this fails too.
+      assert(src <= freq.size());
+      // Perhaps this was meant to be freq.data() + nBins * (copyBegin + oldX0)?
+      // &vec[end] is invalid while vec.data() + end is valid.
+      assert(src < freq.size());
+
       // memmove is required since dst/src overlap
-      memmove(&mSpecCache->freq[nBins * copyBegin],
-               &mSpecCache->freq[nBins * (copyBegin + oldX0)],
-               nBins * (copyEnd - copyBegin) * sizeof(float));
+      memmove(&freq[dest], &freq[src], nBins * (copyEnd - copyBegin) * sizeof(float));
    }
 
    // Reassignment accumulates, so it needs a zeroed buffer
